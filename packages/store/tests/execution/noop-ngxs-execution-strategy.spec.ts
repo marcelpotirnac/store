@@ -1,4 +1,4 @@
-import { ApplicationRef, NgZone, Component, Type } from '@angular/core';
+import { ApplicationRef, NgZone, Component, Type, NgModule } from '@angular/core';
 import { TestBed, TestModuleMetadata } from '@angular/core/testing';
 import { Observable } from 'rxjs';
 import {
@@ -11,6 +11,11 @@ import {
   Actions,
   NoopNgxsExecutionStrategy
 } from '@ngxs/store';
+import { freshPlatform } from '@ngxs/store/internals/testing';
+import { BrowserModule } from '@angular/platform-browser';
+import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
+
+import { NGXS_EXECUTION_STRATEGY } from '../../src/execution/symbols';
 
 describe('NoopNgxsExecutionStrategy', () => {
   class ZoneCounter {
@@ -85,6 +90,33 @@ describe('NoopNgxsExecutionStrategy', () => {
     const get = <T>(classType: Type<T>) => <T>TestBed.inject(classType);
     return { zone, store, ticks, get };
   }
+
+  it(
+    'should provide NoopNgxsExecutionStrategy as an execution strategy if it is not specified explicitly',
+    freshPlatform(async () => {
+      // Arrange
+      @Component({
+        selector: 'app-root',
+        template: ''
+      })
+      class TestComponent {}
+
+      @NgModule({
+        imports: [BrowserModule, NgxsModule.forRoot()],
+        declarations: [TestComponent],
+        bootstrap: [TestComponent]
+      })
+      class TestModule {}
+
+      // Act
+      const { injector } = await platformBrowserDynamic().bootstrapModule(TestModule, {
+        ngZone: 'noop'
+      });
+
+      // Assert
+      expect(injector.get(NGXS_EXECUTION_STRATEGY)).toBeInstanceOf(NoopNgxsExecutionStrategy);
+    })
+  );
 
   describe('[store.select]', () => {
     it('should be performed outside Angular zone, when dispatched from outside zones', () => {

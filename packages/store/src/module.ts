@@ -1,9 +1,12 @@
 import {
   APP_BOOTSTRAP_LISTENER,
   InjectionToken,
+  Injector,
   ModuleWithProviders,
   NgModule,
-  Provider
+  NgZone,
+  Provider,
+  Type
 } from '@angular/core';
 import {
   INITIAL_STATE_TOKEN,
@@ -20,7 +23,7 @@ import {
   NgxsModuleOptions,
   ROOT_STATE_TOKEN
 } from './symbols';
-import { NGXS_EXECUTION_STRATEGY } from './execution/symbols';
+import { NgxsExecutionStrategy, NGXS_EXECUTION_STRATEGY } from './execution/symbols';
 import { StateFactory } from './internal/state-factory';
 import { StateContextFactory } from './internal/state-context-factory';
 import { Actions, InternalActions } from './actions-stream';
@@ -33,6 +36,7 @@ import { PluginManager } from './plugin-manager';
 import { NgxsRootModule } from './modules/ngxs-root.module';
 import { NgxsFeatureModule } from './modules/ngxs-feature.module';
 import { DispatchOutsideZoneNgxsExecutionStrategy } from './execution/dispatch-outside-zone-ngxs-execution-strategy';
+import { NoopNgxsExecutionStrategy } from './execution/noop-ngxs-execution-strategy';
 import { InternalNgxsExecutionStrategy } from './execution/internal-ngxs-execution-strategy';
 import { mergeDeep } from './utils/utils';
 
@@ -98,7 +102,8 @@ export class NgxsModule {
     return [
       {
         provide: NGXS_EXECUTION_STRATEGY,
-        useClass: options.executionStrategy || DispatchOutsideZoneNgxsExecutionStrategy
+        useFactory: NgxsModule.ngxsExecutionStrategyFactory(options.executionStrategy),
+        deps: [NgZone, Injector]
       },
       {
         provide: ROOT_STATE_TOKEN,
@@ -144,5 +149,24 @@ export class NgxsModule {
 
   private static getInitialState() {
     return InitialState.pop();
+  }
+
+  private static ngxsExecutionStrategyFactory(
+    executionStrategy: Type<NgxsExecutionStrategy> | undefined
+  ) {
+    return (ngZone: NgZone, injector: Injector) =>
+      executionStrategy
+        ? injector.get(executionStrategy)
+        : injector.get(
+            // `ngZone` might be an instanceof of `NgZone` either `NoopNgZone`. If the zone is nooped through
+            // bootstrap options (`{ ngZone: 'noop' })`, then we have to provide `NoopNgxsExecutionStrategy`
+            // explicitly. Providing `DispatchOutsideZoneNgxsExecutionStrategy` will cause a runtime exception
+            // `Zone is not defined`, since the `Zone` global will not be exposed by zone.js.
+            // The `DispatchOutsideZoneNgxsExecutionStrategy` uses `NgZone.isInAngularZone()` which tries to get
+            // the current zone through `Zone.current` (this will cause a runtime exception).
+            ngZone instanceof NgZone
+              ? DispatchOutsideZoneNgxsExecutionStrategy
+              : NoopNgxsExecutionStrategy
+          );
   }
 }
